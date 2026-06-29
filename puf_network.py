@@ -38,3 +38,53 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.savefig("crp_distribution.png", dpi=150)
     plt.show()
+# ─────────────────────────────────────────────
+# NEW ARCHITECTURE DEFINITIONS
+# ─────────────────────────────────────────────
+
+def clements_mesh_response(offsets, challenge, N=4):
+    N_layers = N
+    field = np.zeros(N, dtype=complex)
+    field[0] = 1.0
+    for layer in range(N_layers):
+        new_field = field.copy()
+        start = 0 if layer % 2 == 0 else 1
+        for col in range(start, N - 1, 2):
+            idx   = col // 2
+            phase = challenge[layer, idx] + offsets[layer, idx]
+            mzi   = mzi_transfer(phase)
+            pair  = np.array([field[col], field[col + 1]])
+            result = mzi @ pair
+            new_field[col]     = result[0]
+            new_field[col + 1] = result[1]
+        field = new_field
+    return float(abs(field[0]) ** 2)
+
+
+def butterfly_response(offsets, challenge, N_stages=8):
+    N_modes = 2 ** (N_stages // 4 + 1)
+    field   = np.zeros(N_modes, dtype=complex)
+    field[0] = 1.0
+    for stage in range(N_stages):
+        new_field = field.copy()
+        stride    = max(1, (2 ** (stage % (N_modes // 2).bit_length())) % N_modes)
+        for i in range(0, N_modes - stride, stride * 2):
+            phase  = challenge[stage] + offsets[stage]
+            mzi    = mzi_transfer(phase)
+            pair   = np.array([field[i], field[i + stride]])
+            result = mzi @ pair
+            new_field[i]          = result[0]
+            new_field[i + stride] = result[1]
+        field = new_field
+    return float(abs(field[0]) ** 2)
+
+
+def ring_resonator_response(offsets, challenge):
+    transmission = 1.0
+    for offset, c in zip(offsets, challenge):
+        delta      = c + offset
+        Q          = 10000
+        kappa      = 1.0 / Q
+        T_through  = (delta ** 2) / (delta ** 2 + kappa ** 2)
+        transmission *= T_through
+    return float(np.clip(transmission, 0, 1))
